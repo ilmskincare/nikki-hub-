@@ -1,4 +1,4 @@
-# Nikki Hub
+# NeuroVerse
 
 Personal AI command centre — Next.js + Claude (claude-sonnet-4-6).
 

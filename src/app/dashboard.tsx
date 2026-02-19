@@ -47,7 +47,7 @@ export default function Home() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-sm font-semibold text-purple-100 leading-none tracking-tight">Nikki Hub</h1>
+                <h1 className="text-sm font-semibold text-purple-100 leading-none tracking-tight">NeuroVerse</h1>
                 <span className="text-purple-500/40 text-xs leading-none">·</span>
                 <span className="text-xs text-purple-400/50 leading-none">{getGreeting()}, Nikki</span>
               </div>

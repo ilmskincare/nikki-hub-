@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Nikki Hub — Your Space',
-  description: 'Personal AI command centre built for Nikki',
+  title: 'NeuroVerse — Your Space',
+  description: 'Personal AI command centre built for neurodivergent minds',
 };
 
 export const viewport: Viewport = {

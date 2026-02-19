@@ -1,4 +1,4 @@
-# Nikki Hub — Setup Guide
+# NeuroVerse — Setup Guide
 
 ## What you need (all free)
 - Supabase account (supabase.com) — free tier

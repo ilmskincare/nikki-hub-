@@ -83,7 +83,7 @@ async function* streamOpenRouter(messages: Message[], system: string): AsyncGene
       'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': 'https://nikki-hub.vercel.app',
-      'X-Title': 'Nikki Hub',
+      'X-Title': 'NeuroVerse',
     },
     body: JSON.stringify({
       model: 'meta-llama/llama-3.3-70b-instruct:free',
