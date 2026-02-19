@@ -20,6 +20,46 @@ Priority:
 Return format (JSON array ONLY):
 [{"text": "item description", "tag": "income", "priority": "high"}]`;
 
+const VALID_TAGS = new Set(['income', 'cost', 'idea', 'urgent', 'neutral']);
+const VALID_PRIORITIES = new Set(['high', 'medium', 'low']);
+
+function sanitise(str: string): string {
+  return str
+    // Fix unquoted tag/priority values: "tag":neutral → "tag":"neutral"
+    .replace(/"tag"\s*:\s*([a-z]+)/g,      '"tag":"$1"')
+    .replace(/"priority"\s*:\s*([a-z]+)/g, '"priority":"$1"')
+    // Fix missing comma between adjacent properties: "value" "key": → "value","key":
+    .replace(/"\s+"(?=[a-z]+"?\s*:)/g, '","');
+}
+
+function extractItems(raw: string): { text: string; tag: string; priority: string }[] {
+  const match = raw.match(/\[[\s\S]*\]/);
+  if (!match) return [];
+
+  // Try full array parse first
+  try {
+    return JSON.parse(sanitise(match[0]));
+  } catch { /* fall through */ }
+
+  // Fallback: extract individual flat objects one by one
+  const items: { text: string; tag: string; priority: string }[] = [];
+  const objRe = /\{([^{}]*)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = objRe.exec(match[0])) !== null) {
+    try {
+      const obj = JSON.parse(sanitise(`{${m[1]}}`));
+      if (typeof obj.text === 'string') {
+        items.push({
+          text:     obj.text,
+          tag:      VALID_TAGS.has(obj.tag)             ? obj.tag      : 'neutral',
+          priority: VALID_PRIORITIES.has(obj.priority)  ? obj.priority : 'medium',
+        });
+      }
+    } catch { /* skip malformed object */ }
+  }
+  return items;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { text } = await req.json();
@@ -30,15 +70,7 @@ export async function POST(req: NextRequest) {
       raw += chunk;
     }
 
-    const match = raw.match(/\[[\s\S]*\]/);
-    if (!match) return NextResponse.json({ items: [] });
-
-    // LLMs sometimes emit unquoted values like "tag":neutral — fix before parsing
-    const sanitised = match[0]
-      .replace(/"tag"\s*:\s*([a-z]+)/g,      '"tag":"$1"')
-      .replace(/"priority"\s*:\s*([a-z]+)/g, '"priority":"$1"');
-
-    const items = JSON.parse(sanitised);
+    const items = extractItems(raw);
     return NextResponse.json({ items });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
