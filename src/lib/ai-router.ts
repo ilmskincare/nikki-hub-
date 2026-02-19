@@ -1,11 +1,15 @@
 // ─── Provider definitions ────────────────────────────────────────────────────
-// All free tier. Add more providers here as you get keys.
 // Order = priority. First available provider wins.
 // NOTE: No SDK imports — all providers use plain fetch for serverless compatibility.
 
 interface Message { role: 'user' | 'assistant' | 'system'; content: string; }
 
 const PROVIDERS = [
+  {
+    name: 'claude',
+    model: 'claude-haiku-4-5-20251001',
+    available: () => !!process.env.ANTHROPIC_API_KEY,
+  },
   {
     name: 'groq',
     model: 'llama-3.3-70b-versatile',
@@ -34,6 +38,48 @@ function isRateLimit(err: unknown): boolean {
     return msg.includes('429') || msg.includes('rate limit') || msg.includes('quota') || msg.includes('limit exceeded');
   }
   return false;
+}
+
+// ─── Claude streaming (Anthropic REST API) ───────────────────────────────────
+async function* streamClaude(messages: Message[], system: string): AsyncGenerator<string> {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': process.env.ANTHROPIC_API_KEY!,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 2048,
+      stream: true,
+      system,
+      messages,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Claude ${res.status}: ${err}`);
+  }
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    for (const line of decoder.decode(value, { stream: true }).split('\n')) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') return;
+      try {
+        const parsed = JSON.parse(data);
+        const text = parsed.delta?.text ?? '';
+        if (text) yield text;
+      } catch { continue; }
+    }
+  }
 }
 
 // ─── Groq streaming (plain fetch — OpenAI-compatible endpoint) ───────────────
@@ -213,7 +259,9 @@ export async function* streamChat(
   for (const provider of available) {
     try {
       console.log(`[ai-router] Trying ${provider.name}...`);
-      if (provider.name === 'groq') {
+      if (provider.name === 'claude') {
+        yield* streamClaude(messages, system);
+      } else if (provider.name === 'groq') {
         yield* streamGroq(messages, system);
       } else if (provider.name === 'openrouter') {
         yield* streamOpenRouter(messages, system);
