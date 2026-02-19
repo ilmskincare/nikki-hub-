@@ -1,8 +1,7 @@
-import Groq from 'groq-sdk';
-
 // ─── Provider definitions ────────────────────────────────────────────────────
 // All free tier. Add more providers here as you get keys.
 // Order = priority. First available provider wins.
+// NOTE: No SDK imports — all providers use plain fetch for serverless compatibility.
 
 interface Message { role: 'user' | 'assistant' | 'system'; content: string; }
 
@@ -37,18 +36,42 @@ function isRateLimit(err: unknown): boolean {
   return false;
 }
 
-// ─── Groq streaming ──────────────────────────────────────────────────────────
+// ─── Groq streaming (plain fetch — OpenAI-compatible endpoint) ───────────────
 async function* streamGroq(messages: Message[], system: string): AsyncGenerator<string> {
-  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-  const stream = await groq.chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
-    max_tokens: 2048,
-    stream: true,
-    messages: [{ role: 'system', content: system }, ...messages],
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      max_tokens: 2048,
+      stream: true,
+      messages: [{ role: 'system', content: system }, ...messages],
+    }),
   });
-  for await (const chunk of stream) {
-    const text = chunk.choices[0]?.delta?.content ?? '';
-    if (text) yield text;
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Groq ${res.status}: ${err}`);
+  }
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    for (const line of decoder.decode(value, { stream: true }).split('\n')) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') return;
+      try {
+        const text = JSON.parse(data).choices?.[0]?.delta?.content ?? '';
+        if (text) yield text;
+      } catch { continue; }
+    }
   }
 }
 

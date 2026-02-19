@@ -39,7 +39,8 @@ export async function POST(req: NextRequest) {
       .eq('id', 1)
       .single();
     if (memory?.content) {
-      systemPrompt = `# NIKKI'S MEMORY / CONTEXT\n\n${memory.content}\n\n---\n\n${BASE_SYSTEM}`;
+      const basePrompt = confidant ? CONFIDANT_SYSTEM : BASE_SYSTEM;
+      systemPrompt = `# NIKKI'S MEMORY / CONTEXT\n\n${memory.content}\n\n---\n\n${basePrompt}`;
     }
 
     // Save user message to history
