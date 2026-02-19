@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { streamChat } from '@/lib/ai-router';
 
+export const maxDuration = 60;
+
 const DUMP_SYSTEM = `You help Nikki, who has ADHD, organise her thoughts. She gives you a brain dump of everything in her head. Break it into individual items and tag each one.
 
 Return ONLY a valid JSON array, no other text, no explanation.
@@ -23,39 +25,37 @@ Return format (JSON array ONLY):
 const VALID_TAGS = new Set(['income', 'cost', 'idea', 'urgent', 'neutral']);
 const VALID_PRIORITIES = new Set(['high', 'medium', 'low']);
 
-function sanitise(str: string): string {
-  return str
-    // Fix unquoted tag/priority values: "tag":neutral → "tag":"neutral"
-    .replace(/"tag"\s*:\s*([a-z]+)/g,      '"tag":"$1"')
-    .replace(/"priority"\s*:\s*([a-z]+)/g, '"priority":"$1"')
-    // Fix missing comma between adjacent properties: "value" "key": → "value","key":
-    .replace(/"\s+"(?=[a-z]+"?\s*:)/g, '","');
-}
-
+// Robust per-object regex extraction — handles Llama's broken JSON:
+//   - Empty key: "": "cost"  instead of  "tag": "cost"
+//   - Missing opening quote: "text":fix the website"
+//   - Unquoted values: "priority":high
 function extractItems(raw: string): { text: string; tag: string; priority: string }[] {
   const match = raw.match(/\[[\s\S]*\]/);
   if (!match) return [];
 
-  // Try full array parse first
-  try {
-    return JSON.parse(sanitise(match[0]));
-  } catch { /* fall through */ }
-
-  // Fallback: extract individual flat objects one by one
   const items: { text: string; tag: string; priority: string }[] = [];
   const objRe = /\{([^{}]*)\}/g;
   let m: RegExpExecArray | null;
+
   while ((m = objRe.exec(match[0])) !== null) {
-    try {
-      const obj = JSON.parse(sanitise(`{${m[1]}}`));
-      if (typeof obj.text === 'string') {
-        items.push({
-          text:     obj.text,
-          tag:      VALID_TAGS.has(obj.tag)             ? obj.tag      : 'neutral',
-          priority: VALID_PRIORITIES.has(obj.priority)  ? obj.priority : 'medium',
-        });
-      }
-    } catch { /* skip malformed object */ }
+    const obj = m[1];
+
+    // Extract text — handle "text":"value" and "text":value" (missing opening quote)
+    const textM = obj.match(/"text"\s*:\s*"?([^",}\n]+)/);
+    const text = textM?.[1]?.replace(/^"/, '').trim();
+    if (!text) continue;
+
+    // Extract tag — handle "tag":"value", "tag":value, and "":"value" (Llama empty key bug)
+    let tag = 'neutral';
+    const tagM = obj.match(/(?:"tag"|"")\s*:\s*"?([a-z]+)"?/);
+    if (tagM && VALID_TAGS.has(tagM[1])) tag = tagM[1];
+
+    // Extract priority — handle quoted and unquoted values
+    let priority = 'medium';
+    const priM = obj.match(/"priority"\s*:\s*"?([a-z]+)"?/);
+    if (priM && VALID_PRIORITIES.has(priM[1])) priority = priM[1];
+
+    items.push({ text, tag, priority });
   }
   return items;
 }
@@ -71,7 +71,10 @@ export async function POST(req: NextRequest) {
     }
 
     const items = extractItems(raw);
-    return NextResponse.json({ items, _raw: raw });
+    if (!items.length) {
+      return NextResponse.json({ error: "Couldn't parse that — try again?" }, { status: 500 });
+    }
+    return NextResponse.json({ items });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });
