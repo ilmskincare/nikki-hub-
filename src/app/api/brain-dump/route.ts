@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     }
 
     const items = extractItems(raw);
-    return NextResponse.json({ items });
+    return NextResponse.json({ items, _raw: raw });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });
