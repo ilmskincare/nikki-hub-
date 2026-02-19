@@ -33,7 +33,12 @@ export async function POST(req: NextRequest) {
     const match = raw.match(/\[[\s\S]*\]/);
     if (!match) return NextResponse.json({ items: [] });
 
-    const items = JSON.parse(match[0]);
+    // LLMs sometimes emit unquoted values like "tag":neutral — fix before parsing
+    const sanitised = match[0]
+      .replace(/"tag"\s*:\s*([a-z]+)/g,      '"tag":"$1"')
+      .replace(/"priority"\s*:\s*([a-z]+)/g, '"priority":"$1"');
+
+    const items = JSON.parse(sanitised);
     return NextResponse.json({ items });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
